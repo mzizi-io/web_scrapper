@@ -1,106 +1,98 @@
+import csv
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium_stealth import stealth
+from geopy.geocoders import Nominatim
+import plotly.graph_objects as go
+from tabulate import tabulate
+gn = Nominatim(user_agent='testtest1')
+
+URL = "https://booking-dp-fr.lastminute.com/s/hdp/search?origin=PAR&destination=A&datefrom=2023-06-20&dateto=2023-06-23&adults=2&search_mode=DP&sort=recommended&source=csw&businessProfileId=HOLIDAYSBOOKINGFR_PROMO2&bf_subsource=S07HPV10S07RR01&search_id=i4cr8nhwizlkd7sjit"
+SCROLL_PAUSE_TIME = 1
 
 # Create driver
 driver = webdriver.Chrome()
-stealth(driver,
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True)
-url = "https://www.skyscanner.com/transport/flights-from/cdg/230610/230630/?adultsv2=1&cabinclass=economy&childrenv2"
-driver.get(url)
-
-time.sleep(100)
+driver.get(URL)
 chain = ActionChains(driver)
-button = driver.find_element(By.XPATH, "//button[text()='OK']")
+time.sleep(5)
+button = driver.find_element(By.XPATH, "//button[text()='Tout refuser']")
 chain.move_to_element(button).click().perform()
-time.sleep(60)
+time.sleep(5)
 
-# Get all country destinations
-countries = driver.find_elements(By.CLASS_NAME, 'browse-list-category')
+# Get scroll height
+last_height = driver.execute_script("return document.body.scrollHeight")
 
-def collect_destination_details(self, index):
-    destination = self.driver.execute_script(f'''
-                return document.
-                    getElementsByClassName('browse-list-category open')[0].
-                    getElementsByClassName('browse-data-entry')[{index}]
-                ''')
+count = 0
+while count < 5:
+    # Scroll down to bottom
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
 
-    # Get destination name
+    # Wait to load page
+    time.sleep(SCROLL_PAUSE_TIME)
+
+    # Calculate new scroll height and compare with last scroll height
+    new_height = driver.execute_script("return document.body.scrollHeight")
+    count += 1
+
+time.sleep(2)
+
+# Get all destinations
+destinations = driver.find_elements(By.CLASS_NAME, 'openx-ui-card')
+
+data = {"longitudes": [], "latitudes": [], "text": []}
+results = []
+# Find destination information
+for destination in destinations:
     try:
-        destination_name = destination.find_element(By.TAG_NAME, 'h3').text
+        info = destination.find_element(By.CLASS_NAME, 'openx-ui-card-content')
+        price_rating = destination.find_element(By.CLASS_NAME, 'openx-ui-card-details-right-mobile')
 
-        # Get flight link
-        flight_link = destination.find_element(By.CLASS_NAME, 'flightLink').get_attribute('href')
+        # Get label from info
+        label = info.find_element(By.CLASS_NAME, "openx-ui-card-label").text
+        city = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-city").text
+        country = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-country").text
+        destination = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-description").text
 
-        # Get hotel link
-        hotel_link = destination.find_element(By.CLASS_NAME, 'hotelLink').get_attribute('href')
+        # Get price rating info
+        direct_flight_or_layover = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-details-left-flight").text
+        rating = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-details-left-rating")
+        price = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-price-container-value").text
+        persons = price_rating.find_element(By.CLASS_NAME, "fZhwlq").text
 
-        # Get Prices
-        prices = destination.find_elements(By.CLASS_NAME, 'price')
-        flight_price = re.sub("[^0-9]", "", prices[0].text)
-        hotel_price = re.sub("[^0-9]", "", prices[1].text)
-
-        result = {'destination': destination_name,
-                'flight_link': flight_link,
-                'hotel_link': hotel_link,
-                'flight_price': flight_price,
-                'hotel_price': hotel_price}
+        # Find coordinates
+        location = gn.geocode(city + ", " + country)
+        latitude = location.latitude
+        longitude = location.longitude
+        data["longitudes"].append(longitude)
+        data["latitudes"].append(latitude)
+        data["text"].append(city + ", " + country + " <br> " + "Price: " + price + " " + persons)
+        result = [label, country, city, destination, direct_flight_or_layover, price, persons, latitude, longitude]
+        results.append(result)
 
     except:
-        print('\n\n\n\n\n !!!!!!!!!!!!! ERROR. FAILED TO RETRIEVE DETAILS !!!!!!!!!!!!!')
-    return result
+        continue
 
-# For each country get prices
-for country in countries:
-    chain = ActionChains(driver)
+# # Plot data on a graph
+layout = dict(title='Parsed flight data',
+              geo=dict(projection={'type': 'robinson'},
+                       showlakes=True,
+                       lakecolor='rgb(0,191,255)'))
+fig = go.Figure(data=go.Scattergeo(
+    lon=data["longitudes"],
+    lat=data["latitudes"],
+    text=data["text"],
+    hoverinfo="text",
+    marker={'color': 'RebeccaPurple', 'size': 10},
+    mode='markers'), layout=layout)
+fig.update_geos(visible=True, resolution=110,
+    showcountries=True, countrycolor="DarkGray"
+)
+fig.show()
+fig.write_html("prices.html")
 
-    # Click on div
-    time.sleep(2)
-    chain.move_to_element(country).click().perform()
+html_table = tabulate(results, tablefmt='html')
+with open("price_table.html", "w", encoding="utf-8") as html:
+    html.write(html_table)
 
-    # Get all links from container divs
-    try:
-        wait = WebDriverWait(driver, timeout=10)
-        wait.until(lambda d: d.find_element(By.CLASS_NAME, "city-list"))
-
-    except Exception as exception:
-        print(f'\n\n\n Failed to load elements \n\nError: {exception}')
-
-    time.sleep(5)
-    city_list = driver.execute_script('''
-                return document.
-                        getElementsByClassName('browse-list-category open')
-                ''')
-    
-    # In case of multiple open boxes
-    city_list = city_list[-1]
-
-    # Get the links for each destination
-    links = city_list.find_elements(By.CLASS_NAME, 'browse-data-entry')
-    country_div = country.find_element(By.CLASS_NAME,
-                                                'browse-data-route')
-
-    # Get destination name
-    country_name = country_div.find_element(By.XPATH, 'h3').text
-
-    # Get destinations for country
-    destinations = [collect_destination_details(index) for index in
-                    range(len(links))]
-
-    # Close chevron
-    chevron_down = country.find_element(By.CLASS_NAME,
-                                                'chevron-down')
-    chain.move_to_element(chevron_down).click().perform()
-
-    print(destinations)
-
-driver.close()
-driver.quit()
+print('done')
