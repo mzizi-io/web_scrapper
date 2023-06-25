@@ -3,10 +3,11 @@ import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from geopy.geocoders import Nominatim
+import googlemaps
 import plotly.graph_objects as go
 from tabulate import tabulate
-gn = Nominatim(user_agent='testtest1')
+
+gmaps = googlemaps.Client(key='AIzaSyCsUzvhtiWMDzm4jBHbb1DhLBMBeDsf6B8')
 
 URL = "https://booking-dp-fr.lastminute.com/s/hdp/search?origin=PAR&destination=A&datefrom=2023-06-20&dateto=2023-06-23&adults=2&search_mode=DP&sort=recommended&source=csw&businessProfileId=HOLIDAYSBOOKINGFR_PROMO2&bf_subsource=S07HPV10S07RR01&search_id=i4cr8nhwizlkd7sjit"
 SCROLL_PAUSE_TIME = 1
@@ -44,34 +45,30 @@ data = {"longitudes": [], "latitudes": [], "text": []}
 results = []
 # Find destination information
 for destination in destinations:
-    try:
-        info = destination.find_element(By.CLASS_NAME, 'openx-ui-card-content')
-        price_rating = destination.find_element(By.CLASS_NAME, 'openx-ui-card-details-right-mobile')
+    info = destination.find_element(By.CLASS_NAME, 'openx-ui-card-content')
+    price_rating = destination.find_element(By.CLASS_NAME, 'openx-ui-card-details-right-mobile')
 
-        # Get label from info
-        label = info.find_element(By.CLASS_NAME, "openx-ui-card-label").text
-        city = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-city").text
-        country = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-country").text
-        destination = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-description").text
+    # Get label from info
+    label = info.find_element(By.CLASS_NAME, "openx-ui-card-label").text
+    city = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-city").text
+    country = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-country").text
+    destination = info.find_element(By.CLASS_NAME, "openx-ui-card-details-left-description").text
 
-        # Get price rating info
-        direct_flight_or_layover = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-details-left-flight").text
-        rating = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-details-left-rating")
-        price = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-price-container-value").text
-        persons = price_rating.find_element(By.CLASS_NAME, "fZhwlq").text
+    # Get price rating info
+    direct_flight_or_layover = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-details-left-flight").text
+    rating = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-details-left-rating")
+    price = price_rating.find_element(By.CLASS_NAME, "openx-ui-card-price-container-value").text
+    persons = price_rating.find_element(By.CLASS_NAME, "fZhwlq").text
 
-        # Find coordinates
-        location = gn.geocode(city + ", " + country)
-        latitude = location.latitude
-        longitude = location.longitude
-        data["longitudes"].append(longitude)
-        data["latitudes"].append(latitude)
-        data["text"].append(city + ", " + country + " <br> " + "Price: " + price + " " + persons)
-        result = [label, country, city, destination, direct_flight_or_layover, price, persons, latitude, longitude]
-        results.append(result)
-
-    except:
-        continue
+    # Find coordinates
+    location = gmaps.geocode(city + ", " + country)
+    latitude = location.latitude
+    longitude = location.longitude
+    data["longitudes"].append(longitude)
+    data["latitudes"].append(latitude)
+    data["text"].append(city + ", " + country + " <br> " + "Price: " + price + " " + persons)
+    result = [label, country, city, destination, direct_flight_or_layover, price, persons, latitude, longitude]
+    results.append(result)
 
 # # Plot data on a graph
 layout = dict(title='Parsed flight data',
